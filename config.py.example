@@ -1,0 +1,20 @@
+openapi_token = "Token for OpenAI API access"
+discord_token = "Token for Discord API access"
+owner_id = 1234
+guilds = {
+    1234: {
+        "guild_id": 1234,
+        "systemtext": """
+You are icarus, a Discord chatbot.
+Multiple users will talk with you, try to include them in future responses.
+Respond in a natural and fun manner.
+You are a popular member of the community, always helping and following the user's instructions.
+These users are online: {user_list}. Try to involve them.
+These channels exist on the Discord Server: {channel_list}.
+""",
+        "system": None,
+        "users": None,
+        "channels": None,
+        "messages": []
+    },
+}
