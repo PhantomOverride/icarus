@@ -1,3 +1,5 @@
+import json
+
 import discord
 from discord.ext import commands
 import openai
@@ -15,6 +17,7 @@ discord_token = config.discord_token
 guilds = config.guilds
 owner_id = config.owner_id
 unlocked = False
+functions = config.functions
 #handler = logging.FileHandler(filename='icarus_discord.log', encoding='utf-8', mode='w')
 
 # This code from OpenAI counts the number of tokens in a message list
@@ -88,6 +91,98 @@ async def dalle_draw(prompt):
     )
     print("Drew",response["data"][0]["url"])
     return response["data"][0]["url"]
+
+async def do_openai(guild_id, recursion=None, depth=0):
+    if depth == 5:
+        print("Warning! Five recursions! Limiting functions to model.")
+    if recursion is None:
+        messages = guilds[guild_id]["system"] + guilds[guild_id]["messages"]
+    else:
+        messages = guilds[guild_id]["system"] + guilds[guild_id]["messages"] + recursion
+
+    #print(messages)
+
+    if depth < 5: # Only present functions to OpenAI if depth is less than five recursions
+        response = await openai.ChatCompletion.acreate(
+            timeout=10,
+            model="gpt-3.5-turbo-0613",
+            messages=messages,
+            max_tokens=500,
+            n=1,
+            temperature=0.8,
+            functions=functions
+        )
+    else:
+        response = await openai.ChatCompletion.acreate(
+            timeout=10,
+            model="gpt-3.5-turbo-0613",
+            messages=messages,
+            max_tokens=500,
+            n=1,
+            temperature=0.8
+        )
+
+    response_message = response.choices[0]["message"]
+
+    if response_message.get("function_call"): # The bot wants to make a function call
+        function_name = response_message["function_call"]["name"]
+        function_arguments = json.loads(response_message["function_call"]["arguments"])
+        if function_name == "get_weather_for_city":
+            print("Bot wants to call get_weather_for_city with", function_arguments)
+            geo = requests.get("https://geocoding-api.open-meteo.com/v1/search?name=" + str(function_arguments.get("location")))
+            geo_json = json.loads(geo.text)
+            lat = geo_json["results"][0]["latitude"]
+            long = geo_json["results"][0]["longitude"]
+            weather_text = requests.get(f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={long}&current_weather=true").text
+
+            recursion_messages = (recursion or []) + [response_message] + [{
+                    "role": "function",
+                    "name": function_name,
+                    "content": weather_text
+                }]
+
+
+            second_response = await do_openai(guild_id, recursion_messages, depth+1)
+            response = second_response
+            response_message = response.choices[0]["message"]
+        elif function_name == "get_geolocation_for_city":
+            print("Bot wants to call get_geolocation_for_city with", function_arguments)
+            geo = requests.get("https://geocoding-api.open-meteo.com/v1/search?name=" + str(function_arguments.get("location"))).text
+
+            recursion_messages = (recursion or []) + [response_message] + [{
+                    "role": "function",
+                    "name": function_name,
+                    "content": geo
+                }]
+
+            second_response = await do_openai(guild_id, recursion_messages, depth+1)
+            response = second_response
+            response_message = response.choices[0]["message"]
+        elif function_name == "bored_api":
+            print("Bot wants to call bored_api with", function_arguments)
+            bored = requests.get("https://www.boredapi.com/api/activity?participants=" + str(function_arguments.get("participants"))).text
+
+            recursion_messages = (recursion or []) + [response_message] + [{
+                    "role": "function",
+                    "name": function_name,
+                    "content": bored
+                }]
+
+            second_response = await do_openai(guild_id, recursion_messages, depth+1)
+            response = second_response
+            response_message = response.choices[0]["message"]
+        else:
+            print(f"Function call from OpenAI to undefined {function_name}, ignoring.")
+            return "The bot tried to call an undefined function " + function_name +" :/"
+
+    if recursion: # We are currently performing an API call
+        print("Returning recursive call")
+        return response
+    else: # We are not performing an API call
+        # Append the response from OpenAI to the list of messages
+        guilds[guild_id]["messages"].append(response_message)
+        return response_message["content"]
+
 
 # --------------------------------------------------------------
 # Startup
@@ -262,27 +357,16 @@ async def on_message(message):
                 print(f"Popping failed for [{guild_id}/{guild_name}]!")
                 pass
         # Pass the message to the OpenAI API
-        response = await openai.ChatCompletion.acreate(
-            timeout=10,
-            model="gpt-3.5-turbo",
-            messages=guilds[guild_id]["system"] + guilds[guild_id]["messages"],
-            max_tokens=500,
-            n=1,
-            temperature=0.8,
-        )
-
-        # Append the response from OpenAI to the list of messages
-        r = response.choices[0]["message"]
-        guilds[guild_id]["messages"].append(r)
+        response_text = str(await do_openai(guild_id))
 
         # Make sure we do not exceed Discords length limit
-        c = response.choices[0]["message"]["content"]
-        if len(c) > 1999:
-            c = c[:1980] + "...[capped]..."
-        c2 = message.author.mention + " " + c
+        # c = response.choices[0]["message"]["content"]
+        if len(response_text) > 1999:
+            response_text = response_text[:1980] + "...[capped]..."
+        to_send = message.author.mention + " " + response_text
 
         # Send the response to the channel
-        await message.channel.send(c2)
+        await message.channel.send(to_send)
 
     # Process commands, if any
     await bot.process_commands(message)

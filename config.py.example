@@ -1,5 +1,49 @@
 openapi_token = "Token for OpenAI API access"
 discord_token = "Token for Discord API access"
+functions=[
+            {
+                "name": "get_weather_for_city",
+                "description": "Get the current weather in a given location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city to get the weather for",
+                        }
+                    },
+                    "required": ["location"],
+                },
+            },
+            {
+                "name": "get_geolocation_for_city",
+                "description": "Get the longitude, latitude, and elevation for a city",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city to get the geolocation for",
+                        }
+                    },
+                    "required": ["location"],
+                },
+            },
+            {
+                "name": "bored_api",
+                "description": "Get suggestion of something to do",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "participants": {
+                            "type": "integer",
+                            "description": "How many people? Set to 1 if unsure.",
+                        }
+                    },
+                    "required": ["participants"],
+                },
+            }
+        ]
 owner_id = 1234
 guilds = {
     1234: {
